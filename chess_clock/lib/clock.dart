@@ -2,7 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import 'game-time.dart';
+import 'player.dart';
 
 class ClockWidget extends StatefulWidget {
   static const routeName = "/clock";
@@ -13,19 +13,19 @@ class ClockWidget extends StatefulWidget {
 }
 
 class _ClockWidgetState extends State<ClockWidget> {
-  Stopwatch whiteTimer;
-  Stopwatch blackTimer;
+  Stopwatch whiteTimer = new Stopwatch();
+  Stopwatch blackTimer = new Stopwatch();
   Timer periodicTicker;
   bool started = false;
-  bool readyToStart = false;
   bool isWhitesTurn = true;
   bool whiteFlagged = false;
   bool blackFlagged = false;
   int duration = 0;
-  int whiteTimeLeft = 0;
-  int blackTimeLeft = 0;
+  Duration whiteTime;
+  Duration blackTime;
 
   final Color activeColor = Colors.green[500];
+  final Color flaggedColor = Colors.red[100];
 
   @override
   void dispose() {
@@ -37,16 +37,36 @@ class _ClockWidgetState extends State<ClockWidget> {
   }
 
   @override
+  void didChangeDependencies() {
+    // TODO: implement didChangeDependencies
+    super.didChangeDependencies();
+    setState(() {
+      duration = ModalRoute.of(context).settings.arguments as int;
+
+      int whiteMinutes = duration >= 60 ? (duration / 60).floor() : 0;
+      int whiteSeconds = duration - (whiteMinutes * 60);
+      int blackMinutes = duration >= 60 ? (duration / 60).floor() : 0;
+      int blackSeconds = duration - (blackMinutes * 60);
+
+      whiteTime = Duration(
+        minutes: whiteMinutes,
+        seconds: whiteSeconds,
+      );
+
+      blackTime = Duration(
+        minutes: blackMinutes,
+        seconds: blackSeconds,
+      );
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
     // Hide notification bar
     SystemChrome.setEnabledSystemUIOverlays([]);
 
     return OrientationBuilder(
       builder: (context, orientation) {
-        if (readyToStart == false) {
-          return clockSelectionScreen();
-        }
-
         if (orientation == Orientation.landscape) {
           return horizontalClock(context);
         }
@@ -80,11 +100,6 @@ class _ClockWidgetState extends State<ClockWidget> {
   }
 
   List<Widget> horizontalClockTimer(context, width, height) {
-    int whiteMinutes = whiteTimeLeft >= 60 ? (whiteTimeLeft / 60).floor() : 0;
-    int whiteSeconds = whiteTimeLeft - (whiteMinutes * 60);
-    int blackMinutes = blackTimeLeft >= 60 ? (blackTimeLeft / 60).floor() : 0;
-    int blackSeconds = blackTimeLeft - (blackMinutes * 60);
-
     return <Widget>[
       Container(
         width: width,
@@ -99,7 +114,10 @@ class _ClockWidgetState extends State<ClockWidget> {
               children: (whiteFlagged == true
                   ? <Widget>[Icon(Icons.flag, color: Colors.red, size: 150)]
                   : timerButtonText(
-                      "White", whiteMinutes, whiteSeconds, Colors.black)),
+                      "White",
+                      whiteTime.inMinutes,
+                      whiteTime.inSeconds - (whiteTime.inMinutes * 60),
+                      Colors.black)),
             ),
           ),
         ),
@@ -117,7 +135,10 @@ class _ClockWidgetState extends State<ClockWidget> {
               children: (blackFlagged == true
                   ? <Widget>[Icon(Icons.flag, color: Colors.red, size: 150)]
                   : timerButtonText(
-                      "Black", blackMinutes, blackSeconds, Colors.white)),
+                      "Black",
+                      blackTime.inMinutes,
+                      blackTime.inSeconds - (blackTime.inMinutes * 60),
+                      Colors.white)),
             ),
           ),
         ),
@@ -126,6 +147,8 @@ class _ClockWidgetState extends State<ClockWidget> {
   }
 
   void handleOnBlackPressed() {
+    if (whiteFlagged || blackFlagged) return;
+
     if (started) {
       setState(() {
         isWhitesTurn = false;
@@ -136,18 +159,13 @@ class _ClockWidgetState extends State<ClockWidget> {
   }
 
   List<Widget> verticalClockTimer(context, width, height) {
-    int whiteMinutes = whiteTimeLeft >= 60 ? (whiteTimeLeft / 60).floor() : 0;
-    int whiteSeconds = whiteTimeLeft - (whiteMinutes * 60);
-    int blackMinutes = blackTimeLeft >= 60 ? (blackTimeLeft / 60).floor() : 0;
-    int blackSeconds = blackTimeLeft - (blackMinutes * 60);
-
     return <Widget>[
       Container(
         width: width,
         height: height,
         child: FlatButton(
           onPressed: handleOnWhitePressed,
-          color: (isWhitesTurn ? activeColor : Colors.white),
+          color: getColorFor(Player.White),
           child: RotatedBox(
             quarterTurns: 2,
             child: Column(
@@ -156,8 +174,8 @@ class _ClockWidgetState extends State<ClockWidget> {
                   ? <Widget>[Icon(Icons.flag, color: Colors.red, size: 150)]
                   : timerButtonText(
                       "White",
-                      whiteMinutes,
-                      whiteSeconds,
+                      whiteTime.inMinutes,
+                      blackTime.inSeconds,
                       Colors.black,
                     )),
             ),
@@ -169,13 +187,13 @@ class _ClockWidgetState extends State<ClockWidget> {
         height: height,
         child: FlatButton(
           onPressed: handleOnBlackPressed,
-          color: (isWhitesTurn == false ? activeColor : Colors.black),
+          color: getColorFor(Player.Black),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: (blackFlagged == true
                 ? <Widget>[Icon(Icons.flag, color: Colors.red, size: 150)]
-                : timerButtonText(
-                    "Black", blackMinutes, blackSeconds, Colors.white)),
+                : timerButtonText("Black", blackTime.inMinutes,
+                    blackTime.inSeconds, Colors.white)),
           ),
         ),
       ),
@@ -183,6 +201,8 @@ class _ClockWidgetState extends State<ClockWidget> {
   }
 
   void handleOnWhitePressed() {
+    if (whiteFlagged || blackFlagged) return;
+
     if (started == false) {
       periodicTicker = Timer.periodic(Duration(seconds: 1), (t) {
         if (whiteFlagged || blackFlagged) {
@@ -193,15 +213,19 @@ class _ClockWidgetState extends State<ClockWidget> {
         setState(() {
           if (whiteTimer.isRunning &&
               whiteTimer.elapsed.inSeconds <= duration) {
-            whiteTimeLeft = duration - whiteTimer.elapsed.inSeconds;
+            whiteTime =
+                Duration(seconds: duration - whiteTimer.elapsed.inSeconds);
           }
+
           if (blackTimer.isRunning &&
               blackTimer.elapsed.inSeconds <= duration) {
-            blackTimeLeft = duration - blackTimer.elapsed.inSeconds;
+            blackTime =
+                Duration(seconds: duration - blackTimer.elapsed.inSeconds);
           }
+
           started = true;
-          whiteFlagged = whiteTimeLeft <= 0;
-          blackFlagged = blackTimeLeft <= 0;
+          whiteFlagged = whiteTime.inSeconds <= 0;
+          blackFlagged = blackTime.inSeconds <= 0;
         });
       });
     }
@@ -235,74 +259,6 @@ class _ClockWidgetState extends State<ClockWidget> {
     ];
   }
 
-  Widget clockSelectionScreen() {
-    return Container(
-      color: Colors.grey[300],
-      child: Wrap(
-        direction: Axis.horizontal,
-        alignment: WrapAlignment.center,
-        crossAxisAlignment: WrapCrossAlignment.center,
-        children: <Widget>[
-          timerOption("1 Hour", GameTime.Hour),
-          timerOption("20 Minute", GameTime.TwentyMinute),
-          timerOption("10 Minute", GameTime.TenMinute),
-          timerOption("5 Minute", GameTime.FiveMinute),
-          timerOption("3 Minute", GameTime.ThreeMinute),
-          timerOption("1 Minute", GameTime.OneMinute),
-          timerOption("30 Second", GameTime.ThirtySecond)
-        ],
-      ),
-    );
-  }
-
-  MaterialButton timerOption(String timerText, GameTime timerOption) {
-    return RaisedButton(
-      onPressed: () {
-        int d = 0;
-        switch (timerOption) {
-          case GameTime.ThirtySecond:
-            d = 30;
-            break;
-          case GameTime.OneMinute:
-            d = 60;
-            break;
-          case GameTime.ThreeMinute:
-            d = 180;
-            break;
-          case GameTime.FiveMinute:
-            d = 300;
-            break;
-          case GameTime.TenMinute:
-            d = 600;
-            break;
-          case GameTime.TwentyMinute:
-            d = 1200;
-            break;
-          case GameTime.Hour:
-            d = 3600;
-            break;
-          default:
-        }
-
-        setState(() {
-          duration = d;
-          readyToStart = true;
-          whiteTimer = new Stopwatch();
-          blackTimer = new Stopwatch();
-          whiteTimeLeft = d;
-          blackTimeLeft = d;
-        });
-      },
-      child: Text(
-        timerText,
-        style: TextStyle(
-          fontSize: 30,
-          backgroundColor: activeColor,
-        ),
-      ),
-    );
-  }
-
   Widget verticalClock(context) {
     return Center(
       child: Container(
@@ -324,5 +280,20 @@ class _ClockWidgetState extends State<ClockWidget> {
         ),
       ),
     );
+  }
+
+  Color getColorFor(Player player) {
+    if ((whiteFlagged && player == Player.White) ||
+        (blackFlagged && player == Player.Black)) {
+      return flaggedColor;
+    }
+
+    if (player == Player.White) {
+      return isWhitesTurn == true ? activeColor : Colors.white;
+    }
+
+    return player == Player.Black && isWhitesTurn == false
+        ? activeColor
+        : Colors.black;
   }
 }
