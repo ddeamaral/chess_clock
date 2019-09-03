@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'package:chess_clock/game-settings.dart';
+import 'package:chess_clock/timer-service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -9,10 +11,10 @@ class ClockWidget extends StatefulWidget {
 
   ClockWidget({Key key}) : super(key: key);
 
-  _ClockWidgetState createState() => _ClockWidgetState();
+  ClockWidgetState createState() => ClockWidgetState();
 }
 
-class _ClockWidgetState extends State<ClockWidget> {
+class ClockWidgetState extends State<ClockWidget> {
   Stopwatch whiteTimer = new Stopwatch();
   Stopwatch blackTimer = new Stopwatch();
   Timer periodicTicker;
@@ -23,6 +25,9 @@ class _ClockWidgetState extends State<ClockWidget> {
   int duration = 0;
   Duration whiteTime;
   Duration blackTime;
+  int increment = 0;
+
+  TimerService timerService = TimerService();
 
   final Color activeColor = Colors.green[500];
   final Color flaggedColor = Colors.red[100];
@@ -38,10 +43,12 @@ class _ClockWidgetState extends State<ClockWidget> {
 
   @override
   void didChangeDependencies() {
-    // TODO: implement didChangeDependencies
     super.didChangeDependencies();
     setState(() {
-      duration = ModalRoute.of(context).settings.arguments as int;
+      GameSettings settings =
+          ModalRoute.of(context).settings.arguments as GameSettings;
+      duration = settings.durationInSeconds;
+      increment = settings.increment;
 
       int whiteMinutes = duration >= 60 ? (duration / 60).floor() : 0;
       int whiteSeconds = duration - (whiteMinutes * 60);
@@ -175,9 +182,8 @@ class _ClockWidgetState extends State<ClockWidget> {
                   : timerButtonText(
                       "White",
                       whiteTime.inMinutes,
-                      blackTime.inSeconds,
-                      Colors.black,
-                    )),
+                      whiteTime.inSeconds - (whiteTime.inMinutes * 60),
+                      Colors.black)),
             ),
           ),
         ),
@@ -192,8 +198,11 @@ class _ClockWidgetState extends State<ClockWidget> {
             mainAxisAlignment: MainAxisAlignment.center,
             children: (blackFlagged == true
                 ? <Widget>[Icon(Icons.flag, color: Colors.red, size: 150)]
-                : timerButtonText("Black", blackTime.inMinutes,
-                    blackTime.inSeconds, Colors.white)),
+                : timerButtonText(
+                    "Black",
+                    blackTime.inMinutes,
+                    blackTime.inSeconds - (blackTime.inMinutes * 60),
+                    Colors.white)),
           ),
         ),
       ),
@@ -211,17 +220,17 @@ class _ClockWidgetState extends State<ClockWidget> {
         }
 
         setState(() {
-          if (whiteTimer.isRunning &&
-              whiteTimer.elapsed.inSeconds <= duration) {
-            whiteTime =
-                Duration(seconds: duration - whiteTimer.elapsed.inSeconds);
-          }
+          if (whiteTimer.isRunning && whiteTimer.elapsed.inSeconds <= duration)
+            whiteTime = timerService.getDurationRemaining(
+              whiteTimer,
+              duration,
+              started,
+              increment,
+            );
 
-          if (blackTimer.isRunning &&
-              blackTimer.elapsed.inSeconds <= duration) {
-            blackTime =
-                Duration(seconds: duration - blackTimer.elapsed.inSeconds);
-          }
+          if (blackTimer.isRunning && blackTimer.elapsed.inSeconds <= duration)
+            blackTime = timerService.getDurationRemaining(
+                blackTimer, duration, started, increment);
 
           started = true;
           whiteFlagged = whiteTime.inSeconds <= 0;
